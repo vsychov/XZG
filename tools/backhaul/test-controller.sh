@@ -6,6 +6,9 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
   -v "$PWD:/workspace" -w /workspace czc-backhaul-tests:1 sh -c '
     set -eu
     python tools/backhaul/extract-controller-test.py
+    g++ -std=c++11 -Wall -Wextra -Werror \
+      -Ilib/Backhaul/src tests/backhaul/test_endpoint_allocation.cpp lib/Backhaul/src/Backhaul.cpp -o .backhaul-tests/test-endpoint-allocation
+    .backhaul-tests/test-endpoint-allocation
     g++ -std=c++11 -DDEBUG -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
       -Ilib/CzcBackhaul/src tests/backhaul/test_migration.cpp -o .backhaul-tests/test-migration
     .backhaul-tests/test-migration

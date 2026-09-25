@@ -4,6 +4,12 @@ cd "$(dirname "$0")/../.."
 python3 - <<'PY'
 from pathlib import Path
 s=Path('src/main.cpp').read_text()
+def definition(name):
+    import re
+    start=re.search(r'^void '+name+r'\([^;\n]*\)\n\{',s,re.M).start()
+    return s[start:s.index('\n}',start)+3]
+Path('.backhaul-tests/services-under-test.inc').write_text(
+    '\n'.join(definition(name) for name in ('startServers','startAP','setupCoordinatorMode')))
 start=s.index('void connectWifi()\n{')
 connect=s[start:s.index('void setupCoordinatorMode()',start)]
 assert 'WiFi.IPv6(' not in connect
@@ -52,4 +58,8 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
     g++ -std=c++11 -Wall -Wextra -Werror -Wno-unused-parameter -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
       tests/backhaul/test_ipv4_dhcp.cpp -o .backhaul-tests/test-ipv4-dhcp
     .backhaul-tests/test-ipv4-dhcp
+    g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+      tests/backhaul/test_service_startup.cpp -o .backhaul-tests/test-service-startup
+    .backhaul-tests/test-service-startup
+    .backhaul-tests/test-service-startup usb
   '

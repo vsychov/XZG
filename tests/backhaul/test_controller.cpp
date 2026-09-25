@@ -56,6 +56,8 @@ static struct { bool bound=true; struct { uint32_t sequence=0,ticket=0; } mappin
 static struct { bool compatible=true; } radioVersion;
 static uint8_t localInfo[32]{};
 static bool satelliteInitialized=true,masterInitialized=true;
+static bool maintenanceActive=false;
+static const char *fault="none";
 static uint32_t lastInfo=123;
 static unsigned invalidations=0;
 static void disconnectPeers(const char *) {
@@ -66,6 +68,7 @@ static void disconnectPeers(const char *) {
     }
 }
 #include "../../.backhaul-tests/lifecycle-under-test.inc"
+#include "../../.backhaul-tests/resume-under-test.inc"
 static void rawWork();
 static void cycle(){ serviceRadioLifecycle(); rawWork(); }
 
@@ -200,6 +203,15 @@ int main(){
     radio.tick(millis()+29000); assert(!radio.fatal);
     radio.tick(millis()+30001); assert(radio.fatal && !strcmp(radio.error,"reset_timeout"));
     cycle(); assert(!vars.connectedClients); close(fd);
+    // Manual CC restart can consume resetInd while CCTools owns the UART.
+    // Resume must invalidate BOTH cached startup states, even without resetInd.
+    assert(radio.suspend()); maintenanceActive=true;
+    masterInitialized=satelliteInitialized=radioVersion.compatible=true; lastInfo=123;
+    ZnpFrame duringMaintenance=frame(0x41,0x80,{1,2,1,2,7,1});
+    Serial2.feed(duringMaintenance.data,duringMaintenance.size);
+    resumeAfterMaintenance();
+    assert(!maintenanceActive && !masterInitialized && !satelliteInitialized && !radioVersion.compatible && !lastInfo);
+    assert(!strcmp(fault,"awaiting_peer"));
     // Hardware recovery holds the receiver; retain resetInd buffered during the
     // CCTools reset delay, and tolerate BSL residue before that valid indication.
     assert(radio.suspend()); radio.expectReset();

@@ -103,43 +103,30 @@ void startSocketServer()
 
 void startServers(bool usb = false)
 {
-
-  if (!vars.apStarted)
+  // AP fallback can call this again while Ethernet is still obtaining a lease.
+  // Keep one NTP task, cron setup, controller listener and MQTT/VPN instance.
+  static bool servicesStarted = false;
+  if (servicesStarted) return;
+  servicesStarted = true;
+  xTaskCreate(setClock, "setClock", 2048, NULL, 9, NULL);
+  if (!usb)
   {
-    xTaskCreate(setClock, "setClock", 2048, NULL, 9, NULL);
-    if (!usb)
-    {
-      startSocketServer();
-    }
-    if (vpnCfg.wgEnable)
-    {
-      wgBegin();
-    }
-    if (mqttCfg.enable)
-    {
-      mqttConnectSetup();
-    }
+    startSocketServer();
+  }
+  if (vpnCfg.wgEnable)
+  {
+    wgBegin();
+  }
+  if (mqttCfg.enable)
+  {
+    mqttConnectSetup();
   }
 
   initWebServer();
 
   startAP(false);
 
-  /*if (!vars.apStarted)
-  {
-    if (vpnCfg.wgEnable)
-    {
-      wgBegin();
-    }
-  }*/
-
   mDNS_start();
-  /* //not available now
-  if (vpnCfg.hnEnable)
-  {
-    hnBegin();
-  }
-  */
 }
 
 void handleTmrNetworkOverseer()
@@ -375,7 +362,7 @@ void startAP(const bool start)
     WiFi.setSleep(false);
     // ConfigSettings.wifiAPenblTime = millis();
     LOGD("startServers()");
-    startServers();
+    startServers(systemCfg.workMode == WORK_MODE_USB);
     vars.apStarted = true;
   }
 }
@@ -520,12 +507,12 @@ void setupCoordinatorMode()
   WiFi.onEvent(NetworkEvent);
   if (networkCfg.ethEnable)
     initLan();
-  if (networkCfg.wifiEnable)
-    connectWifi();
-  //}
 
   writeDefaultDeviceID (vars.deviceId); // need for mqtt, vpn, mdns, wifi ap and so on
   writeDeviceId        (systemCfg, vpnCfg, mqttCfg);
+  if (networkCfg.wifiEnable)
+    connectWifi();
+  //}
 
   switch (systemCfg.workMode)
   {
@@ -677,7 +664,7 @@ void setup()
   {
     LOGI("[ZB] role: %s", String(systemCfg.zbRole));
   }
-  LOGI("[ESP] FW: %s", String(VERSION));
+  printLogMsg(String("[ESP] FW: ") + VERSION);
 
   LOGI("Load cfg %s", hwConfig.board);
 

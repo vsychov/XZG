@@ -7,6 +7,11 @@ s = Path('src/web.cpp').read_text()
 version = s[s.index('static void apiCmdZbCheckFirmware(String &result)'):s.index('static void apiCmdZbLedToggle(String &result)')]
 role = s[s.index('void changeZbMode(String fwMode)'):s.index('static void apiCmdDefault(String &result)')]
 Path('.backhaul-tests/radio-role-under-test.inc').write_text(version + role)
+sdk = Path(Path('.backhaul-tests/sdk-path.txt').read_text())
+s = (sdk / 'libraries/WebServer/src/Parsing.cpp').read_text()
+Path('.backhaul-tests/multipart-under-test.inc').write_text(
+    s[s.index('void WebServer::_uploadWriteByte('):s.index('String WebServer::urlDecode(')]
+    + s[s.index('bool WebServer::_parseFormUploadAborted()'):])
 PY
 docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
   --user "$(id -u):$(id -g)" -e TMPDIR=/workspace/.backhaul-tests \
@@ -19,6 +24,9 @@ docker run --rm --network none --cap-drop ALL --security-opt no-new-privileges \
     g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
       -I.pio/libdeps/prod/ArduinoJson/src tests/backhaul/test_update.cpp -o .backhaul-tests/test-update
     .backhaul-tests/test-update
+    g++ -std=c++11 -Wall -Wextra -Werror -Wno-sign-compare -fsanitize=address,undefined -fno-omit-frame-pointer -no-pie \
+      -I.pio/libdeps/prod/ArduinoJson/src tests/backhaul/test_multipart.cpp -o .backhaul-tests/test-multipart
+    .backhaul-tests/test-multipart
     python -c "from pathlib import Path; s=Path(\"src/zb.cpp\").read_text(); Path(\".backhaul-tests/radio-flash-under-test.inc\").write_text(s[s.index(\"bool eraseWriteZbFile(\"):s.index(\"float sendPercentageToFrontend(\")]); s=Path(\"src/radio_web_update.cpp\").read_text(); Path(\".backhaul-tests/radio-upload-under-test.inc\").write_text(\"\\n\".join(line for line in s.splitlines() if not line.startswith(\"#include\")))"
     g++ -std=c++11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
       -I.pio/libdeps/prod/ArduinoJson/src -Ilib/CzcBackhaul/src \

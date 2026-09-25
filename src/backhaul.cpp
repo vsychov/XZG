@@ -23,6 +23,7 @@
 #include <Preferences.h>
 #include <lwip/sockets.h>
 #include <errno.h>
+#include <new>
 
 extern SystemConfigStruct systemCfg;
 extern NetworkConfigStruct networkCfg;
@@ -351,7 +352,7 @@ static void workPeer(Peer &p) {
         memset(p.remote,0,sizeof(p.remote)); p.remoteIp[0]=0;
         p.tls.peerAddress(p.remoteIp,sizeof(p.remoteIp));
         for(unsigned i=0;i<8;i++) p.session[i]=epoch>>(8*i);
-        p.endpoint=new backhaul::Endpoint(cfg.mode==1 ? 1 : 2,cfg.mode==1 ? 2 : 1);
+        p.endpoint=new(std::nothrow) backhaul::Endpoint(cfg.mode==1 ? 1 : 2,cfg.mode==1 ? 2 : 1);
         if(!p.endpoint || !p.endpoint->open(epoch,nowMs())) { disconnectPeer(p,"memory_or_epoch"); return; }
         p.sessionOpen=true; ++reconnects;
     }
@@ -755,7 +756,7 @@ static void networkTask(void *) {
             publishStatus(); vTaskDelay(pdMS_TO_TICKS(10)); continue;
         }
         if(maintenanceActive) {
-            radio.resume(); maintenanceActive=false; satelliteInitialized=false; lastInfo=0; radioVersion.compatible=false; fault="awaiting_peer";
+            radio.resume(); maintenanceActive=false; satelliteInitialized=false; masterInitialized=false; lastInfo=0; radioVersion.compatible=false; fault="awaiting_peer";
         }
         commissionSatellite();
         serviceRadioLifecycle();

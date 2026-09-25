@@ -5,6 +5,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include <memory>
 #include <ArduinoJson.h>
 struct String: std::string {
     using std::string::string;
@@ -14,6 +15,17 @@ struct String: std::string {
     long toInt() const { return strtol(c_str(),nullptr,10); }
     size_t write(uint8_t c) { push_back(c); return 1; }
     size_t write(const uint8_t *p,size_t n) { append(reinterpret_cast<const char *>(p),n); return n; }
+#ifdef CZC_TEST_MULTIPART
+    int indexOf(char c) const { auto n=find(c); return n==npos ? -1 : int(n); }
+    String substring(size_t start,size_t end=npos) const { return substr(start,end==npos ? npos : end-start); }
+    bool startsWith(const String &s) const { return compare(0,s.size(),s)==0; }
+    bool equalsIgnoreCase(const String &s) const {
+        if(size()!=s.size()) return false;
+        for(size_t i=0;i<size();i++) if(tolower((*this)[i])!=tolower(s[i])) return false;
+        return true;
+    }
+    bool concat(char c) { push_back(c); return true; }
+#endif
 };
 static constexpr int HTTP_CODE_OK=200,HTTPC_STRICT_FOLLOW_REDIRECTS=1;
 static constexpr size_t UPDATE_SIZE_UNKNOWN=size_t(-1),slotSize=1310720;
@@ -41,8 +53,22 @@ static uint32_t millis() { return f.time; }
 static void delay(unsigned n) { f.time+=n; }
 static void sendEventSafe(const char *tag,const String &value) { f.sequence.push_back(String(std::string(tag)+":"+value)); }
 struct WiFiClient {
-    size_t available() { return f.body.size()-f.cursor; }
+    size_t available() {
+#ifdef CZC_TEST_MULTIPART
+        if(!request.empty() || keepOpen) return request.size()-cursor;
+#endif
+        return f.body.size()-f.cursor;
+    }
     int readBytes(uint8_t *p,size_t n) { n=std::min(n,available()); memcpy(p,f.body.data()+f.cursor,n); f.cursor+=n; return n; }
+#ifdef CZC_TEST_MULTIPART
+    std::string request;
+    size_t cursor=0;
+    bool keepOpen=false;
+    explicit WiFiClient(const std::string &s=""):request(s) {}
+    int read() { return cursor<request.size() ? uint8_t(request[cursor++]) : -1; }
+    bool connected() { return cursor<request.size() || keepOpen; }
+    unsigned getTimeout() { return 20; }
+#endif
 };
 struct WiFiClientSecure:WiFiClient { void setInsecure() {} };
 struct HTTPClient {
@@ -68,17 +94,50 @@ struct UpdateFixture {
 } Update;
 struct EspFixture { void restart() { ++f.restarts; f.sequence.push_back("restart"); } } ESP;
 enum UploadStatus { UPLOAD_FILE_START,UPLOAD_FILE_WRITE,UPLOAD_FILE_END,UPLOAD_FILE_ABORTED };
-struct HTTPUpload { UploadStatus status=UPLOAD_FILE_START; size_t currentSize=0; uint8_t *buf=nullptr; };
+struct HTTPUpload {
+    UploadStatus status=UPLOAD_FILE_START; size_t currentSize=0; uint8_t *buf=nullptr;
+#ifdef CZC_TEST_MULTIPART
+    String name,filename,type;
+    size_t totalSize=0;
+    uint8_t storage[1436]{};
+    HTTPUpload():buf(storage) {}
+#endif
+};
+#ifdef CZC_TEST_MULTIPART
+struct Handler;
+#endif
 struct WebServer {
     HTTPUpload part;
     String sizeArg="4096",response;
     int responseStatus=0;
     bool hasSize=true;
-    HTTPUpload &upload() { return part; }
+    HTTPUpload &upload() {
+#ifdef CZC_TEST_MULTIPART
+        if(_currentUpload) return *_currentUpload;
+#endif
+        return part;
+    }
     bool hasArg(const char *) { return hasSize; }
     String arg(const char *) { return sizeArg; }
     void sendHeader(const char *,const char *) {}
     void send(int code,const char * =nullptr,const String &body="") { responseStatus=code; response=body; f.sequence.push_back("http_response"); }
+#ifdef CZC_TEST_MULTIPART
+    struct RequestArgument { String key,value; };
+    RequestArgument *_postArgs=nullptr,*_currentArgs=nullptr;
+    int _postArgsLen=0,_currentArgCount=0;
+    String _currentUri="/update";
+    std::unique_ptr<HTTPUpload> _currentUpload;
+    Handler *_currentHandler=nullptr;
+    bool _parseForm(WiFiClient &,String,uint32_t);
+    bool _parseFormUploadAborted();
+    void _uploadWriteByte(uint8_t);
+    int _uploadReadByte(WiFiClient &);
+    void clearParser() {
+        delete[] _postArgs; delete[] _currentArgs;
+        _postArgs=_currentArgs=nullptr; _postArgsLen=_currentArgCount=0;
+        _currentUpload.reset();
+    }
+#endif
 } serverWeb;
 static bool is_authenticated() { return f.authorized; }
 // Exact production lifecycle, local handlers, progress callback, and URL updater.
@@ -86,6 +145,9 @@ static bool is_authenticated() { return f.authorized; }
 
 static bool completed() { return std::find(f.sequence.begin(),f.sequence.end(),"esp.fp:100")!=f.sequence.end(); }
 static void reset() {
+#ifdef CZC_TEST_MULTIPART
+    serverWeb.clearParser();
+#endif
     f=Fixture(); serverWeb=WebServer(); espUpdateRestartAt=0; espUpdateState="idle"; espUpdateError="";
     espUploadHeld=espUploadSeen=espUploadReady=espUploadStarted=false; espUploadExpected=espUploadReceived=0;
 }
@@ -140,4 +202,5 @@ int main() {
     reset(); f.writeOK=false; local(); finish("ota_write_failed",400);
     f.writeOK=true; f.aborted=false; local(); finish("esp_updated",200); success();
     puts("PASS ESP local updater: 96.25% regression, exact size, HTTP-before-restart, validation before 100%, truncation/abort/extra-file rejection, retry, authentication");
+    return 0;
 }

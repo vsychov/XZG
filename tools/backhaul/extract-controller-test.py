@@ -9,6 +9,8 @@ out = root / '.backhaul-tests'
 (out / 'lifecycle-under-test.inc').write_text(source[source.index('static void serviceRadioLifecycle()'):source.index('static void initializeMaster()')])
 (out / 'master-startup-under-test.inc').write_text(source[source.index('static void initializeMaster()'):source.index('static void peerWork()')])
 network = source[source.index('static void networkTask(void *)'):source.index('bool backhaulConfigured()')]
+(out / 'resume-under-test.inc').write_text('static void resumeAfterMaintenance() {\n' +
+    network[network.index('        if(maintenanceActive) {'):network.index('        commissionSatellite();')] + '}\n')
 assert network.index('serviceRadioLifecycle();') < network.index('peerWork();') < network.index('adminWork();') < network.index('rawWork();')
 peer = source[source.index('static void peerWork()'):source.index('static void ieeeText(')]
 assert peer.index('if(radio.resetWaiting)') < peer.index('info()')
@@ -43,4 +45,6 @@ assert 'availableForWrite' not in (sdk_root / 'libraries/WiFi/src/WiFiClient.h')
 # Actual peer result handler and the service block whose order is critical for APS ACK.
 (out / 'peer-results-under-test.inc').write_text(source[source.index('static void complete(Peer '):source.index('static void disconnectPeer(')])
 work = source[source.index('static void workPeer(Peer '):source.index('static void serviceRadioLifecycle()')]
+(out / 'endpoint-open-under-test.inc').write_text('static void openEndpoint(Peer &p) {\n' +
+    work[work.index('    if(!p.sessionOpen) {'):work.index('    auto &ep=')] + '}\n')
 (out / 'peer-order-under-test.inc').write_text(work[work.index('    // A Confirm and'):work.index('    if(p.profileNeeded')])
